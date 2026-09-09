@@ -1,6 +1,6 @@
 from playwright.sync_api import Page
 
-# This class represents the SauceDemo storefront page and provides reusable methods for interacting with it.
+# Reusable page object for the SauceDemo storefront.
 class SauceDemoPage:
     """Reusable page object for the SauceDemo storefront."""
 
