@@ -1,6 +1,7 @@
 from playwright.sync_api import Page
 
-# This class represents the SauceDemo storefront page and provides reusable methods for interacting with it.
+# Reusable page object for the SauceDemo storefront.
+# Use these methods in your tests to interact with the page and perform actions like logging in, adding products to the cart, and checking out.
 class SauceDemoPage:
     """Reusable page object for the SauceDemo storefront."""
 
