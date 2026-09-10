@@ -1,5 +1,5 @@
 from api_framework.api_client import APIClient
-from api_framework.config import OLLAMA_BASE_URL, API_TIMEOUT
+from api_framework.config import OLLAMA_BASE_URL, API_TIMEOUT, OLLAMA_MODEL
 
 
 def generate_response(prompt: str) -> str:
@@ -11,9 +11,9 @@ def generate_response(prompt: str) -> str:
     )
 
     payload = {
-        "model": "llama3.2",
+        "model": OLLAMA_MODEL,
         "prompt": prompt,
-        "stream": False,
+        "stream": False, # This is set to False to get the complete response in one go. If set to True, the response would be streamed in chunks.
     }
 
     response = client.post(
