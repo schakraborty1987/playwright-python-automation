@@ -7,6 +7,7 @@ def test_generate_response():
     response = generate_response(prompt)
 
     assert response
+    assert "Playwright" in response
 
     print("\nLLM Response:")
     print(response)
