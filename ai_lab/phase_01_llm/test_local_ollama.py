@@ -1,7 +1,7 @@
-from ai_lab.phase_01_llm.local_ollama import generate_response, generate_response_local
+from ai_lab.phase_01_llm.local_ollama import generate_response_local
 
 
-def test_generate_response():
+def test_generate_response_local():
     prompt = "What is Playwright? Explain it in three sentences."
 
     response = generate_response_local(prompt)
