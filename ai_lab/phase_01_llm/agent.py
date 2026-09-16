@@ -1,5 +1,5 @@
 from ai_lab.phase_01_llm.local_ollama import generate_response_local
-from ai_lab.phase_01_llm.tools import get_sauce_demo_status
+from ai_lab.phase_01_llm.tools import check_url_status
 
 
 def run_agent(user_prompt: str) -> str:
@@ -7,19 +7,22 @@ def run_agent(user_prompt: str) -> str:
     Simple educational Python agent.
 
     The LLM decides whether the request requires
-    the Sauce Demo status tool.
+    the Sauce Demo URL status tool.
     """
 
     decision_prompt = f"""
 You are a routing agent.
 
 Your job is to decide whether the user's question
-requires calling the Sauce Demo status tool.
+requires calling the Sauce Demo URL status tool.
 
 The available tool is:
 
-get_sauce_demo_status
-- Returns the current availability status of the Sauce Demo application.
+check_url_status
+
+- Accepts a URL as input.
+- Checks whether the URL is reachable.
+- Returns the HTTP status of the URL.
 
 RULES:
 
@@ -65,10 +68,12 @@ Decision:
     print(repr(decision))
 
     if decision == "USE_TOOL":
-        print("\nExecuting Tool:")
-        print("get_sauce_demo_status")
+        sauce_demo_url = "https://www.saucedemo.com/"
 
-        tool_result = get_sauce_demo_status()
+        print("\nExecuting Tool:")
+        print("check_url_status")
+
+        tool_result = check_url_status(sauce_demo_url)
 
         print("\nTool Result:")
         print(tool_result)
