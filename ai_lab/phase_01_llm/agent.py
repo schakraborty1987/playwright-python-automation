@@ -2,50 +2,61 @@ from ai_lab.phase_01_llm.local_ollama import generate_response_local
 from ai_lab.phase_01_llm.tools import check_url_status
 
 
+# Tool Registry
+#
+# The agent knows about available tools through this registry.
+# The key is the tool name that the LLM can select.
+# The value is the actual Python function that will be executed.
+TOOL_REGISTRY = {
+    "check_url_status": check_url_status,
+}
+
+
+SAUCE_DEMO_URL = "https://www.saucedemo.com/"
+
+
 def run_agent(user_prompt: str) -> str:
     """
     Simple educational Python agent.
 
-    The LLM decides whether the request requires
-    the Sauce Demo URL status tool.
+    The LLM decides whether a tool is required.
+    The Tool Registry maps the selected tool name
+    to the corresponding Python function.
     """
 
     decision_prompt = f"""
 You are a routing agent.
 
 Your job is to decide whether the user's question
-requires calling the Sauce Demo URL status tool.
+requires one of the available tools.
 
-The available tool is:
+Available tool:
 
-check_url_status
-
-- Accepts a URL as input.
-- Checks whether the URL is reachable.
-- Returns the HTTP status of the URL.
+1. check_url_status
+   - Checks whether a URL is reachable.
+   - Returns the HTTP status code.
 
 RULES:
 
-1. If the user asks about Sauce Demo availability, status,
-   whether Sauce Demo is available, or whether Sauce Demo is up,
-   respond with exactly:
+If the user asks about the availability, status,
+or whether Sauce Demo is up, respond with exactly:
 
-USE_TOOL
+check_url_status
 
-2. For every other question, respond with exactly:
+For every other question, respond with exactly:
 
 ANSWER
 
 Examples:
 
 User: Is Sauce Demo available?
-Response: USE_TOOL
+Response: check_url_status
 
 User: Is Sauce Demo up?
-Response: USE_TOOL
+Response: check_url_status
 
 User: What is the status of Sauce Demo?
-Response: USE_TOOL
+Response: check_url_status
 
 User: What is Playwright?
 Response: ANSWER
@@ -67,13 +78,21 @@ Decision:
     print("\nAgent Decision:")
     print(repr(decision))
 
-    if decision == "USE_TOOL":
-        sauce_demo_url = "https://www.saucedemo.com/"
+    # ---------------------------------------------------------
+    # Tool execution through the Tool Registry
+    # ---------------------------------------------------------
+
+    if decision in TOOL_REGISTRY:
+
+        print("\nSelected Tool:")
+        print(decision)
+
+        tool = TOOL_REGISTRY[decision]
 
         print("\nExecuting Tool:")
-        print("check_url_status")
+        print(decision)
 
-        tool_result = check_url_status(sauce_demo_url)
+        tool_result = tool(SAUCE_DEMO_URL)
 
         print("\nTool Result:")
         print(tool_result)
@@ -84,10 +103,13 @@ Answer the user's question using the tool result below.
 User question:
 {user_prompt}
 
+Tool used:
+{decision}
+
 Tool result:
 {tool_result}
 
-Give a concise answer.
+Give a concise and accurate answer.
 """
 
         final_response = generate_response_local(final_prompt)
@@ -96,6 +118,10 @@ Give a concise answer.
         print(final_response)
 
         return final_response
+
+    # ---------------------------------------------------------
+    # No tool required
+    # ---------------------------------------------------------
 
     print("\nNo tool required.")
 
