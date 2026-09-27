@@ -2,7 +2,7 @@ import requests
 from typing import Any, Optional
 
 
-class APIClient:
+class    APIClient:
     """
     Generic HTTP API client built on top of the requests library.
 
