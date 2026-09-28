@@ -1,71 +1,99 @@
+import json
+
 from ai_lab.phase_01_llm.local_ollama import generate_response_local
-from ai_lab.phase_01_llm.tools import check_url_status
-
-
-# Tool Registry
-#
-# The agent knows about available tools through this registry.
-# The key is the tool name that the LLM can select.
-# The value is the actual Python function that will be executed.
-TOOL_REGISTRY = {
-    "check_url_status": check_url_status,
-}
+from ai_lab.phase_01_llm.tool_registry import TOOL_REGISTRY
 
 
 SAUCE_DEMO_URL = "https://www.saucedemo.com/"
 
 
-def run_agent(user_prompt: str) -> str:
+def run_agent(user_prompt: str, page=None) -> str:
     """
     Simple educational Python agent.
 
-    The LLM decides whether a tool is required.
-    The Tool Registry maps the selected tool name
-    to the corresponding Python function.
+    The LLM decides:
+    1. Which tool, if any, is required.
+    2. What arguments should be passed to that tool.
+
+    The selected tool is then looked up through the Tool Registry
+    and executed dynamically.
     """
+
+    available_tools = "\n".join(
+        f"- {name}: {details['description']}\n"
+        f"  Parameters: {details['parameters']}"
+        for name, details in TOOL_REGISTRY.items()
+    )
 
     decision_prompt = f"""
 You are a routing agent.
 
-Your job is to decide whether the user's question
-requires one of the available tools.
+Your job is to decide whether the user's question requires
+one of the available tools.
 
-Available tool:
+Available tools:
 
-1. check_url_status
-   - Checks whether a URL is reachable.
-   - Returns the HTTP status code.
+{available_tools}
 
-RULES:
+Known application context:
 
-If the user asks about the availability, status,
-or whether Sauce Demo is up, respond with exactly:
+Sauce Demo URL:
+{SAUCE_DEMO_URL}
 
-check_url_status
+Rules:
 
-For every other question, respond with exactly:
+Return ONLY valid JSON.
 
-ANSWER
+If a tool is required, return:
+
+{{
+    "tool": "tool_name",
+    "arguments": {{
+        "argument_name": "argument_value"
+    }}
+}}
+
+If no tool is required, return:
+
+{{
+    "tool": "ANSWER",
+    "arguments": {{}}
+}}
+
+Available tool names:
+{", ".join(TOOL_REGISTRY.keys())}
 
 Examples:
 
 User: Is Sauce Demo available?
-Response: check_url_status
 
-User: Is Sauce Demo up?
-Response: check_url_status
+Response:
+{{
+    "tool": "check_url_status",
+    "arguments": {{
+        "url": "{SAUCE_DEMO_URL}"
+    }}
+}}
 
-User: What is the status of Sauce Demo?
-Response: check_url_status
+User: What is the title of the Sauce Demo application?
+
+Response:
+{{
+    "tool": "get_page_title",
+    "arguments": {{}}
+}}
 
 User: What is Playwright?
-Response: ANSWER
 
-User: Explain Python.
-Response: ANSWER
+Response:
+{{
+    "tool": "ANSWER",
+    "arguments": {{}}
+}}
 
 Do not provide any explanation.
-Do not provide any other text.
+Do not provide markdown.
+Do not wrap the JSON in ```.
 
 User request:
 {user_prompt}
@@ -73,38 +101,67 @@ User request:
 Decision:
 """
 
-    decision = generate_response_local(decision_prompt).strip()
+    decision_response = generate_response_local(decision_prompt).strip()
 
     print("\nAgent Decision:")
-    print(repr(decision))
+    print(decision_response)
 
-    # ---------------------------------------------------------
-    # Tool execution through the Tool Registry
-    # ---------------------------------------------------------
+    try:
+        decision = json.loads(decision_response)
+    except json.JSONDecodeError:
+        return "The agent returned an invalid tool decision."
 
-    if decision in TOOL_REGISTRY:
+    tool_name = decision.get("tool")
+    arguments = decision.get("arguments", {})
 
-        print("\nSelected Tool:")
-        print(decision)
+    print("\nSelected Tool:")
+    print(tool_name)
 
-        tool = TOOL_REGISTRY[decision]
+    print("\nTool Arguments:")
+    print(arguments)
 
-        print("\nExecuting Tool:")
-        print(decision)
+    if tool_name == "ANSWER":
+        print("\nNo tool required.")
 
-        tool_result = tool(SAUCE_DEMO_URL)
+        final_response = generate_response_local(user_prompt)
 
-        print("\nTool Result:")
-        print(tool_result)
+        print("\nFinal Answer:")
+        print(final_response)
 
-        final_prompt = f"""
+        return final_response
+
+    if tool_name not in TOOL_REGISTRY:
+        return f"I could not execute the requested tool: {tool_name}"
+
+    tool_definition = TOOL_REGISTRY[tool_name]
+    tool_function = tool_definition["function"]
+
+    print("\nExecuting Tool:")
+    print(tool_name)
+
+    if tool_definition["requires_page"]:
+        if page is None:
+            return "The Playwright page is required for this tool."
+
+        tool_result = tool_function(page, **arguments)
+
+    else:
+        tool_result = tool_function(**arguments)
+
+    print("\nTool Result:")
+    print(tool_result)
+
+    final_prompt = f"""
 Answer the user's question using the tool result below.
 
 User question:
 {user_prompt}
 
 Tool used:
-{decision}
+{tool_name}
+
+Tool arguments:
+{arguments}
 
 Tool result:
 {tool_result}
@@ -112,20 +169,7 @@ Tool result:
 Give a concise and accurate answer.
 """
 
-        final_response = generate_response_local(final_prompt)
-
-        print("\nFinal Answer:")
-        print(final_response)
-
-        return final_response
-
-    # ---------------------------------------------------------
-    # No tool required
-    # ---------------------------------------------------------
-
-    print("\nNo tool required.")
-
-    final_response = generate_response_local(user_prompt)
+    final_response = generate_response_local(final_prompt)
 
     print("\nFinal Answer:")
     print(final_response)
