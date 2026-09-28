@@ -1,5 +1,3 @@
-import re
-
 from api_framework.api_client import APIClient
 from pages.SauceDemoPage import SauceDemoPage
 
