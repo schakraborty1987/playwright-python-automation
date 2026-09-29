@@ -1,11 +1,11 @@
 import json
-
-from ai_lab.phase_01_llm.local_ollama import generate_response_local
+from ai_lab.phase_01_llm.models.model_router import ModelRouter
+from api_framework.config import MODEL_PROVIDER
 from ai_lab.phase_01_llm.tool_registry import TOOL_REGISTRY
-
 
 SAUCE_DEMO_URL = "https://www.saucedemo.com/"
 
+model_router = ModelRouter(MODEL_PROVIDER)
 
 def run_agent(user_prompt: str, page=None) -> str:
     """
@@ -101,7 +101,7 @@ User request:
 Decision:
 """
 
-    decision_response = generate_response_local(decision_prompt).strip()
+    decision_response = model_router.generate(decision_prompt).strip()
 
     print("\nAgent Decision:")
     print(decision_response)
@@ -123,7 +123,7 @@ Decision:
     if tool_name == "ANSWER":
         print("\nNo tool required.")
 
-        final_response = generate_response_local(user_prompt)
+        final_response = model_router.generate(user_prompt)
 
         print("\nFinal Answer:")
         print(final_response)
@@ -169,7 +169,7 @@ Tool result:
 Give a concise and accurate answer.
 """
 
-    final_response = generate_response_local(final_prompt)
+    final_response = model_router.generate(final_prompt)
 
     print("\nFinal Answer:")
     print(final_response)
