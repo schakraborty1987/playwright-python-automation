@@ -16,32 +16,34 @@ model_router = ModelRouter("ollama")
 
 def analyze_request(state: QAState) -> QAState:
     """
-    Analyze the user's request and classify it as either
-    a general question or a tool-related request.
+    Deterministically classify the request as GENERAL or TOOL.
+
+    For now, use simple rules.
+    Later, this will be replaced/enhanced with structured LLM output.
     """
 
     print("\n--- ENTERING analyze_request ---")
     print("State received:")
     print(state)
 
-    prompt = f"""
-You are a QA assistant.
+    user_prompt = state["user_prompt"].lower()
 
-Classify the following user request.
+    # Deterministic rules for our current tools. This is a python list of keywords that we will use to classify the request as TOOL or GENERAL.
+    tool_keywords = [
+        "page title",
+        "title of",
+        "is sauce demo available",
+        "is sauce demo reachable",
+        "http status",
+        "status of",
+        "check url",
+        "check website",
+    ]
 
-Return ONLY one of these two values:
-
-GENERAL
-TOOL
-
-Use TOOL if the request requires an external tool or application interaction.
-Use GENERAL for a normal knowledge or conversational question.
-
-User request:
-{state["user_prompt"]}
-"""
-
-    decision = model_router.generate(prompt).strip().upper()
+    if any(keyword in user_prompt for keyword in tool_keywords):
+        decision = "TOOL"
+    else:
+        decision = "GENERAL"
 
     updated_state = {
         **state,
@@ -92,7 +94,7 @@ def handle_tool_request(state: QAState) -> QAState:
     """
     Placeholder for future tool execution.
 
-    We will connect this to our Tool Registry later.
+    The actual Tool Registry will be connected later.
     """
 
     print("\n--- ENTERING handle_tool_request ---")
