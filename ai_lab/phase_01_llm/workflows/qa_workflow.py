@@ -1,192 +1,175 @@
-from typing import Any, TypedDict
 
+from typing import Annotated, Any, TypedDict
+
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 
-from ai_lab.phase_01_llm.models.model_router import ModelRouter
-from ai_lab.phase_01_llm.tool_registry import TOOL_REGISTRY
-from pages.SauceDemoPage import SauceDemoPage
+from ai_lab.phase_01_llm.models.gemini_model import GeminiModel
+from ai_lab.phase_01_llm.tools import (
+    QA_TOOLS,
+    check_url_status,
+    get_page_title,
+)
 
 
-class QAState(TypedDict):
+class QAState(TypedDict, total=False):
     user_prompt: str
     decision: str
     final_response: str
     page: Any
     tool_name: str
     tool_result: str
+    messages: Annotated[list[BaseMessage], add_messages]
 
 
-model_router = ModelRouter("ollama")
-  
+SYSTEM_INSTRUCTIONS = """
+You are a QA automation assistant.
+Follow these tool-selection rules:
+- For a request about a website's availability, reachability, or HTTP status,
+  call check_url_status only.
+- For a request asking for a page title, call get_page_title only.
+- Never call multiple tools for one request.
+- For general questions that do not require a tool, answer directly.
+"""
 
-def analyze_request(state: QAState) -> QAState:
-    """Deterministically classify the request."""
 
-    print("\n--- ENTERING analyze_request ---")
-    print("State received:")
-    print(state)
+gemini_model = GeminiModel()
+model_with_tools = gemini_model.bind_tools(QA_TOOLS)
 
-    user_prompt = state["user_prompt"].lower()
+tool_node = ToolNode([check_url_status])
 
-    tool_keywords = [
-        "page title",
-        "title of",
-        "is sauce demo available",
-        "is sauce demo reachable",
-        "http status",
-        "status of",
-        "check url",
-        "check website",
-    ]
 
-    decision = (
-        "TOOL"
-        if any(keyword in user_prompt for keyword in tool_keywords)
-        else "GENERAL"
+def call_model(state: QAState) -> dict:
+    """Ask Gemini to answer or request a tool."""
+    messages = state.get("messages", [])
+
+    if not messages:
+        messages = [HumanMessage(content=state["user_prompt"])]
+
+    response = model_with_tools.invoke(
+        [SystemMessage(content=SYSTEM_INSTRUCTIONS), *messages]
     )
 
-    updated_state = {
-        **state,
-        "decision": decision,
-    }
+    updates = {"messages": [response]}
 
-    print("State after analyze_request:")
-    print(updated_state)
-
-    return updated_state
-
-
-def route_request(state: QAState) -> str:
-    """Select the appropriate workflow branch."""
-
-    print("\n--- ROUTING REQUEST ---")
-    print(f"Decision: {state['decision']}")
-
-    return "tool" if state["decision"] == "TOOL" else "general"
-
-
-def select_tool(state: QAState) -> QAState:
-    """Select a registered tool using deterministic rules."""
-
-    print("\n--- ENTERING select_tool ---")
-
-    user_prompt = state["user_prompt"].lower()
-
-    if "title" in user_prompt:
-        tool_name = "get_page_title"
-    elif any(
-        keyword in user_prompt
-        for keyword in [
-            "available",
-            "reachable",
-            "http status",
-            "status of",
-            "check url",
-            "check website",
+    # Preserve the initial human message in graph state.
+    if not state.get("messages"):
+        updates["messages"] = [
+            messages[0],
+            response,
         ]
-    ):
-        tool_name = "check_url_status"
+
+    if response.tool_calls:
+        updates["decision"] = "TOOL"
+        updates["tool_name"] = response.tool_calls[0]["name"]
     else:
+        updates["decision"] = state.get("decision") or "GENERAL"
+        updates["final_response"] = str(response.content)
+
+    return updates
+
+
+def route_tool_call(state: QAState) -> str:
+    """Route browser tools separately from other tools."""
+    messages = state.get("messages", [])
+
+    if not messages or not isinstance(messages[-1], AIMessage):
+        return "finish"
+
+    tool_calls = messages[-1].tool_calls
+
+    if not tool_calls:
+        return "finish"
+
+    # Do not allow the model to schedule browser operations
+    # alongside other tool calls.
+    if len(tool_calls) != 1:
         raise ValueError(
-            f"No registered tool matches this request: "
-            f"{state['user_prompt']}"
+            f"Expected one tool call, received: "
+            f"{[call['name'] for call in tool_calls]}"
         )
 
-    if tool_name not in TOOL_REGISTRY:
-        raise ValueError(f"Tool is not registered: {tool_name}")
+    tool_name = tool_calls[0]["name"]
 
-    updated_state = {
-        **state,
-        "tool_name": tool_name,
-    }
+    if tool_name == "get_page_title":
+        return "playwright"
 
-    print(f"Selected tool: {tool_name}")
+    if tool_name == "check_url_status":
+        return "tools"
 
-    return updated_state
+    raise ValueError(f"Unsupported tool call: {tool_name}")
 
 
-def execute_tool(state: QAState) -> QAState:
-    """Execute the selected function from TOOL_REGISTRY."""
+def execute_playwright_tool(state: QAState) -> dict:
+    """Run the synchronous Playwright operation on this graph node."""
+    response = state["messages"][-1]
+    tool_call = response.tool_calls[0]
 
-    print("\n--- ENTERING execute_tool ---")
+    page = state.get("page")
+    if page is None:
+        raise ValueError(
+            "Pass the existing Playwright page in workflow state."
+        )
 
-    tool_name = state["tool_name"]
-    tool_definition = TOOL_REGISTRY[tool_name]
-    tool_function = tool_definition["function"]
+    # Call the underlying Python function directly.
+    result = get_page_title.func(page=page)
 
-    if tool_definition["requires_page"]:
-        page = state.get("page")
-
-        if page is None:
-            raise ValueError(
-                f"Tool '{tool_name}' requires a Playwright page. "
-                "Pass the existing page fixture to the workflow."
+    return {
+        "messages": [
+            ToolMessage(
+                content=str(result),
+                tool_call_id=tool_call["id"],
+                name=tool_call["name"],
             )
-
-        result = tool_function(page)
-
-    else:
-        # Sauce Demo availability requests use the existing application URL.
-        url = SauceDemoPage.BASE_URL
-        result = tool_function(url=url)
-
-    updated_state = {
-        **state,
+        ],
+        "tool_name": tool_call["name"],
         "tool_result": str(result),
-        "final_response": (
-            f"Tool executed: {tool_name}\n"
-            f"Result: {result}"
-        ),
     }
 
-    print("State after execute_tool:")
-    print(updated_state)
 
-    return updated_state
+def capture_tool_result(state: QAState) -> dict:
+    """Capture the latest browser-independent tool result."""
+    for message in reversed(state.get("messages", [])):
+        if isinstance(message, ToolMessage):
+            return {
+                "tool_name": message.name or "",
+                "tool_result": str(message.content),
+            }
 
-
-def handle_general_request(state: QAState) -> QAState:
-    """Answer a general question without executing a tool."""
-
-    print("\n--- ENTERING handle_general_request ---")
-
-    response = model_router.generate(state["user_prompt"])
-
-    updated_state = {
-        **state,
-        "final_response": response,
-    }
-
-    print("State after handle_general_request:")
-    print(updated_state)
-
-    return updated_state
+    return {}
 
 
 def build_qa_workflow():
-    """Build and compile the LangGraph workflow."""
-
     workflow = StateGraph(QAState)
 
-    workflow.add_node("analyze_request", analyze_request)
-    workflow.add_node("select_tool", select_tool)
-    workflow.add_node("execute_tool", execute_tool)
-    workflow.add_node("handle_general_request", handle_general_request)
+    workflow.add_node("call_model", call_model)
+    workflow.add_node("playwright_tool", execute_playwright_tool)
+    workflow.add_node("tools", tool_node)
+    workflow.add_node("capture_tool_result", capture_tool_result)
 
-    workflow.add_edge(START, "analyze_request")
+    workflow.add_edge(START, "call_model")
 
     workflow.add_conditional_edges(
-        "analyze_request",
-        route_request,
+        "call_model",
+        route_tool_call,
         {
-            "general": "handle_general_request",
-            "tool": "select_tool",
+            "playwright": "playwright_tool",
+            "tools": "tools",
+            "finish": END,
         },
     )
 
-    workflow.add_edge("select_tool", "execute_tool")
-    workflow.add_edge("execute_tool", END)
-    workflow.add_edge("handle_general_request", END)
+    workflow.add_edge("playwright_tool", "call_model")
+    workflow.add_edge("tools", "capture_tool_result")
+    workflow.add_edge("capture_tool_result", "call_model")
 
     return workflow.compile()
 
