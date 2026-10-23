@@ -1,36 +1,27 @@
-
 from ai_lab.phase_01_llm.models.base_model import BaseModel
 from ai_lab.phase_01_llm.models.ollama_model import OllamaModel
 from ai_lab.phase_01_llm.models.gemini_model import GeminiModel
+from api_framework.config import MODEL_PROVIDER
 
 
 class ModelRouter:
-    """Provides a common entry point for selecting the LLM."""
+    """Provider selection and common LLM entry point."""
 
-    def __init__(self, provider: str = "ollama"):
-        self.provider = provider.lower()
-
-        if self.provider == "ollama":
-            self.model: BaseModel = OllamaModel()
-        elif self.provider == "gemini":
-            self.model: BaseModel = GeminiModel()
-        else:
-            raise ValueError(f"Unsupported model provider: {provider}")
+    def __init__(self, provider: str | None = None):
+        self.provider = (provider or MODEL_PROVIDER).strip().lower()
+        providers: dict[str, type[BaseModel]] = {
+            "ollama": OllamaModel,
+            "gemini": GeminiModel,
+        }
+        try:
+            self.model = providers[self.provider]()
+        except KeyError as exc:
+            raise ValueError(f"Unsupported model provider: {self.provider}") from exc
 
     def generate(self, prompt: str) -> str:
-        """Generate a regular text response."""
+        """Generate a plain-text response through the selected adapter."""
         return self.model.generate(prompt)
 
-    def select_tool(self, prompt: str, tools: list) -> dict:
-        """
-        Select a tool using the configured model.
-
-        Native tool selection is currently supported by Gemini.
-        """
-        if not hasattr(self.model, "select_tool"):
-            raise NotImplementedError(
-                f"Tool selection is not implemented for provider: "
-                f"{self.provider}"
-            )
-
-        return self.model.select_tool(prompt, tools)
+    def bind_tools(self, tools):
+        """Bind tools through the provider-neutral adapter contract."""
+        return self.model.bind_tools(tools)
