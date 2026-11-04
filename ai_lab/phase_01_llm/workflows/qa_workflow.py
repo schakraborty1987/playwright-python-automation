@@ -224,7 +224,7 @@ def build_qa_workflow(
                     "Only one tool call per model response is supported."
                 )
 
-            updates["decision"] = "TOOL"
+            updates["decision"] = "TOOL"    
             updates["tool_name"] = response.tool_calls[0]["name"]
         else:
             updates["decision"] = (
